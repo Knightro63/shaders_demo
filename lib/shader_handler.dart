@@ -92,6 +92,7 @@ class ShaderHandler {
       width: textureWidth,
       height: textureHeight,
       dpr: defaultAspectRatio,
+      antialias: true
     );
 
     try {
@@ -285,7 +286,7 @@ class ShaderHandler {
       internalFormat: _formatR?.internalFormat ?? 0,
       format: _formatR?.format ?? 0,
       type: texType,
-      param: WebGL.NEAREST,
+      param: WebGL.LINEAR,
     );
     curl = FrameBufferFactory.createFBO(
       _rc,
@@ -295,7 +296,7 @@ class ShaderHandler {
       internalFormat: _formatR?.internalFormat ?? 0,
       format: _formatR?.format ?? 0,
       type: texType,
-      param: WebGL.NEAREST,
+      param: WebGL.LINEAR,
     );
     pressure = FrameBufferFactory.createDoubleFBO(
       _rc,
@@ -305,28 +306,32 @@ class ShaderHandler {
       internalFormat: _formatR?.internalFormat ?? 0,
       format: _formatR?.format ?? 0,
       type: texType,
-      param: WebGL.NEAREST,
+      param: WebGL.LINEAR,
     );
   }
 
-  Function blit() {
+  void blit(dynamic destination) {
     textures[0].activate();
 
-    _rc.bindBuffer(WebGL.ARRAY_BUFFER, _rc.createBuffer());
-    _rc.bufferData(WebGL.ARRAY_BUFFER,
-        Float32Array.fromList([-1, -1, -1, 1, 1, 1, 1, -1]), WebGL.STATIC_DRAW);
-    _rc.bindBuffer(WebGL.ELEMENT_ARRAY_BUFFER, _rc.createBuffer());
-    _rc.bufferData(WebGL.ELEMENT_ARRAY_BUFFER,
-        Uint16Array.fromList([0, 1, 2, 0, 2, 3]), WebGL.STATIC_DRAW);
+    final Buffer vertexBuffer = _rc.createBuffer();
+    _rc.bindBuffer(WebGL.ARRAY_BUFFER, vertexBuffer);
+    _rc.bufferData(WebGL.ARRAY_BUFFER,Float32Array.fromList([-1, -1, -1, 1, 1, 1, 1, -1]), WebGL.STATIC_DRAW);
+
+    final Buffer vertexBuffer4FBO = _rc.createBuffer();
+    _rc.bindBuffer(WebGL.ELEMENT_ARRAY_BUFFER, vertexBuffer4FBO);
+    _rc.bufferData(WebGL.ELEMENT_ARRAY_BUFFER,Uint16Array.fromList([0, 1, 2, 0, 2, 3]), WebGL.STATIC_DRAW);
     _rc.vertexAttribPointer(0, 2, WebGL.FLOAT, false, 0, 0);
     _rc.enableVertexAttribArray(0);
 
     textures[0].signalNewFrameAvailable();
 
-    return (dynamic destination) {
+    //return (dynamic destination) {
       _rc.bindFramebuffer(WebGL.FRAMEBUFFER, destination);
       _rc.drawElements(WebGL.TRIANGLES, 6, WebGL.UNSIGNED_SHORT, 0);
-    };
+    //};
+
+    _rc.deleteBuffer(vertexBuffer);
+    _rc.deleteBuffer(vertexBuffer4FBO);
   }
 
   void splat(
@@ -342,65 +347,50 @@ class ShaderHandler {
     _rc.uniform1i(splatProgram.uTarget, velocity.read.texId);
     // TODO: check if it works with textureWidth / textureHeight
     _rc.uniform1f(splatProgram.aspectRatio, textureWidth / textureHeight);
-    _rc.uniform2f(
-        splatProgram.point, x / textureWidth, 1.0 - y / textureHeight);
+    _rc.uniform2f(splatProgram.point, x / textureWidth, 1.0 - y / textureHeight);
     _rc.uniform3f(splatProgram.color, dx, -dy, 1.0);
     _rc.uniform1f(splatProgram.radius, radius);
     _rc.uniform1f(splatProgram.opacity, opacity);
-    blit()(velocity.write.fbo);
+    blit(velocity.write.fbo);
     velocity.swap();
 
     _rc.uniform1i(splatProgram.uTarget, density.read.texId);
-    _rc.uniform3f(
-        splatProgram.color, color[0] * 0.3, color[1] * 0.3, color[2] * 0.3);
-    blit()(density.write.fbo);
+    _rc.uniform3f(splatProgram.color, color[0] * 0.3, color[1] * 0.3, color[2] * 0.3);
+    blit(density.write.fbo);
     density.swap();
   }
-  
-  int t = DateTime.now().millisecondsSinceEpoch;
-  void update1(){
-    int _current = DateTime.now().millisecondsSinceEpoch;
 
-    double _blue = sin((_current - t) / 500);
-
-    // Clear canvas
-    _rc.clearColor(1.0, 0.0, _blue, 1.0);
-    _rc.clear(WebGL.COLOR_BUFFER_BIT);
-
-    _rc.flush();
-    FlutterAngle.updateTexture(textures.first);
-  }
   void update() {
     const dt = 0.005;
-
-    _rc.viewport(0, 0, textureWidth, textureHeight);
+    //_rc.viewport(0, 0, textureWidth, textureHeight);
 
     /// Bind velocity uniforms
     advectionProgram.bind();
     _rc.uniform2f(
-        advectionProgram.texelSize,
-        (1.0 / textureWidth) * config.speed,
-        (1.0 / textureHeight) * config.speed);
+      advectionProgram.texelSize,
+      (1.0 / textureWidth) * config.speed,
+      (1.0 / textureHeight) * config.speed
+    );
     _rc.uniform1i(advectionProgram.uVelocity, velocity.read.texId);
     _rc.uniform1i(advectionProgram.uSource, velocity.read.texId);
     _rc.uniform1f(advectionProgram.dt, dt);
     _rc.uniform1f(advectionProgram.dissipation, config.velocityDissipation);
-    blit()(velocity.write.fbo);
+    blit(velocity.write.fbo);
     velocity.swap();
 
     /// Bind density uniforms
     _rc.uniform1i(advectionProgram.uVelocity, velocity.read.texId);
     _rc.uniform1i(advectionProgram.uSource, density.read.texId);
     _rc.uniform1f(advectionProgram.dissipation, config.densityDissipation);
-    blit()(density.write.fbo);
+    blit(density.write.fbo);
     density.swap();
-
+    
     /// Create pointer splats
-    for (var i = 0; i < pointers.length; i++) {
+    for (int i = 0; i < pointers.length; i++) {
       final pointer = pointers[i];
 
       if (pointer.moved) {
-        var colour = ShaderUtils.hexToColourArray(pointersColours[i].base);
+        List<double> colour = ShaderUtils.hexToColourArray(pointersColours[i].base);
         double opacity;
         double radius;
         switch (i) {
@@ -423,8 +413,7 @@ class ShaderHandler {
             hue = 0;
           }
           hue += config.rainbowSpeed;
-          final colourHex =
-              ShaderUtils.hslToHex(HSLColor.fromAHSL(1, hue, 1, 0.5));
+          final colourHex = ShaderUtils.hslToHex(HSLColor.fromAHSL(1, hue, 1, 0.5));
           colour = ShaderUtils.hexToColourArray(colourHex);
         }
 
@@ -442,9 +431,8 @@ class ShaderHandler {
     }
 
     /// Create automated pointer splats
-    for (var i = 0; i < automatedPointers.length; i++) {
+    for (int i = 0; i < automatedPointers.length; i++) {
       final pointer = automatedPointers[i];
-
       if (config.movement) {
         final noiseX = Random().nextDouble();
         final noiseY = Random().nextDouble();
@@ -461,8 +449,7 @@ class ShaderHandler {
       }
 
       if (pointer.moved) {
-        List<double> colour =
-            ShaderUtils.hexToColourArray(automatedPointersColours[i].base);
+        List<double> colour = ShaderUtils.hexToColourArray(automatedPointersColours[i].base);
         double opacity;
         double radius;
         switch (i) {
@@ -492,8 +479,7 @@ class ShaderHandler {
             hue = 360;
           }
           hue += config.rainbowSpeed;
-          final colourHex =
-              ShaderUtils.hslToHex(HSLColor.fromAHSL(1, hue, 1, 0.5));
+          final colourHex = ShaderUtils.hslToHex(HSLColor.fromAHSL(1, hue, 1, 0.5));
           colour = ShaderUtils.hexToColourArray(colourHex);
         }
 
@@ -512,28 +498,25 @@ class ShaderHandler {
 
     /// Bind vorticity uniforms
     curlProgram.bind();
-    _rc.uniform2f(
-        curlProgram.texelSize, 1.0 / textureWidth, 1.0 / textureHeight);
+    _rc.uniform2f(curlProgram.texelSize, 1.0 / textureWidth, 1.0 / textureHeight);
     _rc.uniform1i(curlProgram.uVelocity, velocity.read.texId);
-    blit()(curl.fbo);
+    blit(curl.fbo);
 
     /// Bind velocity uniforms
     vorticityProgram.bind();
-    _rc.uniform2f(
-        vorticityProgram.texelSize, 1.0 / textureWidth, 1.0 / textureHeight);
+    _rc.uniform2f(vorticityProgram.texelSize, 1.0 / textureWidth, 1.0 / textureHeight);
     _rc.uniform1i(vorticityProgram.uVelocity, velocity.read.texId);
     _rc.uniform1i(vorticityProgram.uCurl, curl.texId);
     // _rc.uniform1f(vorticityProgram.curl, config.vorticity);
     _rc.uniform1f(vorticityProgram.dt, dt);
-    blit()(velocity.write.fbo);
+    blit(velocity.write.fbo);
     velocity.swap();
 
     /// Bind divergence uniforms
     divergenceProgram.bind();
-    _rc.uniform2f(
-        divergenceProgram.texelSize, 1.0 / textureWidth, 1.0 / textureHeight);
+    _rc.uniform2f(divergenceProgram.texelSize, 1.0 / textureWidth, 1.0 / textureHeight);
     _rc.uniform1i(divergenceProgram.uVelocity, velocity.read.texId);
-    blit()(divergence.fbo);
+    blit(divergence.fbo);
 
     /// Bind pressure uniforms
     clearProgram.bind();
@@ -542,20 +525,19 @@ class ShaderHandler {
     _rc.bindTexture(WebGL.TEXTURE_2D, pressure.read.texture);
     _rc.uniform1i(clearProgram.uTexture, pressureTexId);
     _rc.uniform1f(clearProgram.value, config.pressureDissipation);
-    blit()(pressure.write.fbo);
+    blit(pressure.write.fbo);
     pressure.swap();
 
     /// Bind pressure iterations uniforms
     pressureProgram.bind();
-    _rc.uniform2f(
-        pressureProgram.texelSize, 1.0 / textureWidth, 1.0 / textureHeight);
+    _rc.uniform2f(pressureProgram.texelSize, 1.0 / textureWidth, 1.0 / textureHeight);
     _rc.uniform1i(pressureProgram.uDivergence, divergence.texId);
     pressureTexId = pressure.read.texId;
     _rc.uniform1i(pressureProgram.uPressure, pressureTexId);
     _rc.activeTexture(WebGL.TEXTURE0 + pressureTexId);
-    for (var i = 0; i < config.pressureIterations; i++) {
+    for (int i = 0; i < config.pressureIterations; i++) {
       _rc.bindTexture(WebGL.TEXTURE_2D, pressure.read.texture);
-      blit()(pressure.write.fbo);
+      blit(pressure.write.fbo);
       pressure.swap();
     }
 
@@ -564,22 +546,38 @@ class ShaderHandler {
     _rc.uniform2f(gradientSubtractProgram.texelSize, 1.0 / textureWidth, 1.0 / textureHeight);
     _rc.uniform1i(gradientSubtractProgram.uPressure, pressure.read.texId);
     _rc.uniform1i(gradientSubtractProgram.uVelocity, velocity.read.texId);
-    blit()(velocity.write.fbo);
+    blit(velocity.write.fbo);
+    
     velocity.swap();
 
     /// Bind display uniforms
     // TODO: check if width/height is the same as drawing buffer width/height
-    _rc.viewport(0, 0, _rc.width, _rc.height);
+    //_rc.viewport(0, 0, _rc.width, _rc.height);
     displayProgram.bind();
     _rc.uniform1i(displayProgram.uTexture, density.read.texId);
     _rc.uniform1f(displayProgram.uAmount, config.grain);
-    blit()(null);
+    blit(null);
 
-    /// Debug logging
-    //splatProgram.logValues();
-    //_rc.clear(WebGL.COLOR_BUFFER_BIT);
-
-    _rc.flush();
+    _rc.finish();
     FlutterAngle.updateTexture(textures.first);
+  }
+
+  void dispose(){
+    advectionProgram.dispose();
+    curlProgram.dispose();
+    vorticityProgram.dispose();
+    divergenceProgram.dispose();
+    clearProgram.dispose();
+    pressureProgram.dispose();
+    gradientSubtractProgram.dispose();
+    displayProgram.dispose();
+
+    _rc.deleteFramebuffer(pressure.write.fbo);
+    _rc.deleteFramebuffer(divergence.fbo);
+    _rc.deleteFramebuffer(velocity.write.fbo);
+    _rc.deleteFramebuffer(curl.fbo);
+    _rc.deleteFramebuffer(density.write.fbo);
+
+    _rc.deleteTexture(pressure.read.texture);
   }
 }

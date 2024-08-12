@@ -10,5 +10,5 @@ enum ShaderFragmentType {
   gradientSubtract;
 
   @override
-  String toString() => '${super.toString().split('.').last}Frag';
+  String toString() => '${name}Frag';
 }

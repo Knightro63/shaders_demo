@@ -14,27 +14,26 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      debugShowCheckedModeBanner: false,
+      //title: 'Flutter Demo',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
-
+  const MyHomePage({super.key});
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
   late ShaderHandler shaderHandler;
+  late double dpr;
   late Size size;
   bool ready = false;
 
@@ -55,7 +54,7 @@ class _MyHomePageState extends State<MyHomePage> {
       shaderHandler = ShaderHandler(
         size.width.toInt(),
         size.height.toInt(),
-        MediaQuery.of(context).devicePixelRatio,
+        dpr,
         (){setState(() {});}
       );
       shaderHandler.setup(context);
@@ -65,32 +64,24 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   @override
+  void dispose(){
+    shaderHandler.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     size = MediaQuery.of(context).size;
+    dpr = MediaQuery.of(context).devicePixelRatio;
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
-      ),
-      body: Center(
-        child: Stack(
-          children: [
-            Container(
-              width: size.width,
-              height: size.height,
-              color: Colors.black,
-              child: Builder(builder: (BuildContext context) {
-                if (kIsWeb) {
-                  return ready && shaderHandler.textures.isNotEmpty?HtmlElementView(viewType: shaderHandler.textures.first.textureId.toString()):Container();
-                } else {
-                  return ready && shaderHandler.textures.isNotEmpty?Texture(textureId: shaderHandler.textures.first.textureId):Container();
-                }
-              })
-            )
-          ],
-        ),
-      ),
+      body: SizedBox(
+        width: size.width,
+        height: size.height,
+        child: 
+          (kIsWeb) ?ready && shaderHandler.textures.isNotEmpty?HtmlElementView(viewType: shaderHandler.textures.first.textureId.toString()):Container()
+          :ready && shaderHandler.textures.isNotEmpty?Texture(textureId: shaderHandler.textures.first.textureId):Container()
+      )
     );
   }
 }

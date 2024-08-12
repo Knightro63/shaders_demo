@@ -27,9 +27,11 @@ class GLProgram {
     rc.attachShader(program, fragmentShader);
     rc.linkProgram(program);
 
+    rc.deleteShader(vertexShader);
+    rc.deleteShader(fragmentShader);
+
     // TODO: check usage of id
-    final uniformCount =
-        rc.getProgramParameter(program, WebGL.ACTIVE_UNIFORMS).id;
+    final uniformCount = rc.getProgramParameter(program, WebGL.ACTIVE_UNIFORMS).id;
 
     for (var i = 0; i < uniformCount; i++) {
       final uniformName = rc.getActiveUniform(program, i).name;
@@ -56,7 +58,9 @@ class GLProgram {
   void bind() {
     _rc.useProgram(program);
   }
-
+  void dispose() {
+    _rc.deleteProgram(program);
+  }
   void logValues() {
     uniforms.forEach((key, value) {
       if (kDebugMode) {
